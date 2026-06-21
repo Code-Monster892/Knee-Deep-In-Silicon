@@ -22,7 +22,7 @@ Based on these resources, i have also shared my handwritten notes as a standalon
 I wanted to make sure the journey of building this was just as accessible as the final code. Here is what you'll find:
 
 1. The Hardware: Custom RV32IM CPU
-We designed and built a fully functional 32-bit RISC-V processor from scratch in SystemVerilog. The CPU implements the RV32IM instruction set architecture, meaning it supports the base integer instructions (RV32I) and the hardware multiplication/division extension (M).
+Designed and built a fully functional 32-bit RISC-V processor from scratch in SystemVerilog. The CPU implements the RV32IM instruction set architecture, meaning it supports the base integer instructions (RV32I) and the hardware multiplication/division extension (M).
 CPU Architecture Highlights:
 
 Single-Cycle Execution: The core is currently a single-cycle design, where each instruction is fetched, decoded, and executed in one clock cycle.
@@ -34,26 +34,30 @@ Hardware Multiplier Unit (multiplier.sv): A dedicated combination unit handling 
 Branch Evaluator (be.sv): Dedicated combinational logic for evaluating all 6 conditional branch types.
 
 2. The Software: Bare-Metal C Runtime
-To run C code without an operating system, we had to build a complete bare-metal runtime environment using the GNU RISC-V toolchain (riscv64-unknown-elf-gcc).
+To run C code without an operating system, I had to build a complete bare-metal runtime environment using the GNU RISC-V toolchain (riscv64-unknown-elf-gcc).
 
-Bootloader (crt0.s): We wrote a custom assembly boot sequence that sets up the stack pointer (0x01000000), clears the .bss (uninitialized variables) memory segment to zero, and jumps into the C main() function.
+Bootloader (crt0.s): I wrote a custom assembly boot sequence that sets up the stack pointer (0x01000000), clears the .bss (uninitialized variables) memory segment to zero, and jumps into the C main() function.
 
-Linker Script (link.ld): We laid out the 16 MB of physical RAM, allocating space for the instruction .text, .data, and .bss sections, and feeding the remaining ~10 MB of RAM directly to the C Standard Library as the malloc heap.
+Linker Script (link.ld): I laid out the 16 MB of physical RAM, allocating space for the instruction .text, .data, and .bss sections, and feeding the remaining ~10 MB of RAM directly to the C Standard Library as the malloc heap.
 
-C Standard Library (picolibc): We linked against picolibc, a lightweight libc variant tailored for embedded devices, which gave us access to malloc, printf, and string.h functions natively.
+C Standard Library (picolibc): I linked against picolibc, a lightweight libc variant tailored for embedded devices, which gave us access to malloc, printf, and string.h functions natively.
 
 3. The Port: DOOM Generic
-We ported DOOM Generic, an abstraction of the original DOOM engine designed for easy porting to new hardware.
+I ported DOOM Generic, an abstraction of the original DOOM engine designed for easy porting to new hardware.
 
-Hardware Abstraction Layer (HAL): In doomgeneric_riscv.c, we wrote custom "Operating System" wrappers for DOOM.
+Hardware Abstraction Layer (HAL): In doomgeneric_riscv.c, I wrote custom "Operating System" wrappers for DOOM.
 
-Fake File System: DOOM relies heavily on file I/O to read graphics and levels from the doom1.wad file. We bundled the 4 MB WAD file directly into our C binary as a byte array (doom1_wad.c) and intercepted C system calls (read, open, lseek, close) to read directly from this array instead of a real hard drive.
+Fake File System: DOOM relies heavily on file I/O to read graphics and levels from the doom1.wad file. I bundled the 4 MB WAD file directly into our C binary as a byte array (doom1_wad.c) and intercepted C system calls (read, open, lseek, close) to read directly from this array instead of a real hard drive.
 
 4. The Simulator: Verilator & Memory-Mapped I/O (MMIO)
-We used Verilator to translate our SystemVerilog CPU into a highly optimized C++ model. The Verilator harness (main.cpp) acted as the "Motherboard" for our CPU.
+Used Verilator to translate our SystemVerilog CPU into a highly optimized C++ model. The Verilator harness (main.cpp) acted as the "Motherboard" for our CPU.
+
 Video Output (0x02000000): We dedicated a region of memory as the "Video RAM." When the CPU writes DOOM's generated pixels to this address, the Verilator C++ testbench intercepts the write and paints the color onto an SDL2 graphical window.
+
 System Timer (0x02500000): DOOM requires a precise real-time clock to keep the game running at the correct speed. We exposed the host PC's wall-clock time to the CPU by letting the CPU read from this hardware address.
+
 Keyboard Input (0x02600000): We routed SDL2 keystrokes from the host PC directly into a memory address so the CPU could read player inputs. (these are very unstable but I ain't touching a thing as long as it's working fine lol)
+
 UART Console (0x10000000): We hooked printf to output characters to this address, which Verilator intercepted and printed to the terminal for debugging.
 
  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -74,13 +78,21 @@ Verilator Template/: Transitioning from cocotb to Verilator was a major mileston
 
 (RV32IM)At its core, this processor executes the RV32IM instruction set. While the base integer instructions (RV32I) provide the fundamental arithmetic, memory, and branching operations required to run standard C code, I also fully implemented the standard 'M' extension for Integer Multiplication and Division. Adding native hardware support for complex math operations—rather than relying on slow software emulation—was an absolutely crucial step for handling the heavy rendering calculations required by DOOM.
 Here is the complete list of instructions currently supported and mapped out in the datapath:
+
 R-Type (Arithmetic & Logic): add, sub, sll, slt, sltu, xor, srl, sra, or, and
+
 I-Type (Immediate): addi, slti, sltiu, xori, ori, andi, slli, srli, srai
+
 I-Type (Loads): lw (Word), lh (Halfword), lhu (Halfword Unsigned), lb (Byte), lbu (Byte Unsigned)
+
 S-Type (Stores): sw (Word), sh (Halfword), sb (Byte)
+
 B-Type (Branches): beq, bne, blt, bge, bltu, bgeu
+
 J-Type (Jumps): jal (Jump and Link), jalr (Jump and Link Register)
+
 U-Type (Upper Immediates): lui (Load Upper Immediate), auipc (Add Upper Immediate to PC)
+
 M-Extension (Math): mul, mulh, mulhsu, mulhu, div, divu, rem, remu
 
  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -90,6 +102,9 @@ M-Extension (Math): mul, mulh, mulhsu, mulhu, div, divu, rem, remu
 "It runs DOOM" is the ultimate rite of passage for any custom hardware.
 Porting DOOM required not just a functioning CPU, but a stable toolchain, memory-mapped I/O for the display, and handling strict memory alignment. The guide covers the exact steps taken to cross-compile the game, map the framebuffers, and finally see the classic HUD render on custom silicon.
 
+<img width="742" height="470" alt="image" src="https://github.com/user-attachments/assets/eab6c43a-1d3e-4b2e-9aff-604ed9218090" />
+
+
  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 ⚙️ Simulation, Verification & Performance Notes
@@ -98,6 +113,20 @@ It is important to note that this CPU is currently entirely simulation-based. I 
 
 Porting DOOM to this architecture was a wildly buggy, trial-by-fire experience. Because there is no operating system involved—this is purely bare-metal execution running straight out of 16MB of initialized RAM—the game runs at a very low framerate (Lowkey Unplayable. But atleast it runs). If you are looking for a buttery-smooth, playable DOOM port, this isn't it. Instead, this serves as a raw proof of concept that a custom, hand-built 32-bit processor is fully capable of handling complex, real-world software workloads.
 
-Debugging the port also required some creative problem-solving. At one point, I hit a massive roadblock and couldn't tell if the issue was in my CPU logic, the C code, or the compiler. To isolate the bug, I briefly spun up QEMU to emulate the architecture and test the compiled binaries. This confirmed the compiler instructions were sound, allowing me to confidently jump back into Verilator, pinpoint the actual hardware flaw, and finally get the game rendering. (This alone took me 5-6 Hours btw)
+Debugging the port also required some creative problem-solving. At one point, I hit a massive roadblock and couldn't tell if the issue was in my CPU logic, the C code, or the compiler. The screen was just black and it was hard to figure out where the bug was. To isolate the bug, I briefly spun up QEMU to emulate the architecture and test the compiled binaries. This confirmed the compiler instructions were sound, allowing me to confidently jump back into Verilator, pinpoint the actual hardware flaw, and finally get the game rendering. (This alone took me 5-6 Hours btw)
+
+<img width="397" height="382" alt="image" src="https://github.com/user-attachments/assets/e1afc50d-3c93-407d-8f36-7cc994827cc3" />
+
 
  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🗺️ Future Roadmap
+A custom CPU is never really finished. While getting DOOM to boot was the primary milestone, I already have a few major upgrades on the drawing board to push this architecture further:
+
+Pipelined Architecture: The natural next step. I plan to transition the current design into a fully pipelined architecture to significantly improve throughput, clock speeds, and overall simulation performance.
+
+Audio & Music Support: DOOM just isn't the same without that hard metal Mick Gordan soundtrack. I am exploring ways to add memory-mapped audio peripherals or a basic sound controller to get those classic MIDI-style tracks playing directly from the hardware.
+
+Hardware Acceleration: Since the CPU is currently doing all the heavy lifting in software, adding dedicated hardware acceleration blocks (perhaps for specific rendering operations or memory block transfers) could drastically improve the framerate.
+
+The FPGA Dream: Right now, this project lives comfortably in simulation via Verilator. The ultimate stretch goal—though admittedly a bit far off—is to synthesize this entire design and deploy it onto a physical FPGA development board.
