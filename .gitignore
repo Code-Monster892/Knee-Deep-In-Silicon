@@ -1,0 +1,11 @@
+# Verilator generated files
+obj_dir/
+*.vcd
+# Compiled RISC-V Binaries & Hex dumps
+*.elf
+*.bin
+*.hex
+*.o
+# OS generated files
+.DS_Store
+Thumbs.db

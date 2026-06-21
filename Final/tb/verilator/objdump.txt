@@ -1,0 +1,30 @@
+
+doom.elf:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+00000000 <_start>:
+       0:	01000137          	lui	sp,0x1000
+       4:	00476297          	auipc	t0,0x476
+       8:	7f828293          	addi	t0,t0,2040 # 4767fc <markpoints>
+       c:	004b1317          	auipc	t1,0x4b1
+      10:	e6c30313          	addi	t1,t1,-404 # 4b0e78 <drone>
+      14:	0062f863          	bgeu	t0,t1,24 <_start+0x24>
+      18:	0002a023          	sw	zero,0(t0)
+      1c:	00428293          	addi	t0,t0,4
+      20:	fe62ece3          	bltu	t0,t1,18 <_start+0x18>
+      24:	00000513          	li	a0,0
+      28:	00000593          	li	a1,0
+      2c:	0d1490ef          	jal	498fc <main>
+      30:	0000006f          	j	30 <_start+0x30>
+
+00000034 <uart_putc>:
+      34:	10000737          	lui	a4,0x10000
+      38:	00a70023          	sb	a0,0(a4) # 10000000 <__heap_end+0xf000000>
+      3c:	00008067          	ret
+
+00000040 <open>:
+      40:	fff00513          	li	a0,-1
+      44:	00008067          	ret
+
