@@ -6,6 +6,14 @@ Welcome! This repository contains the complete source code, documentation, and p
 
 The ultimate milestone of this project? Getting it to run DOOM. Whether you are a seasoned hardware engineer or a student trying to wrap your head around computer architecture, I've designed this repository to be as readable and educational as possible.
 
+
+
+
+<img width="426" height="240" alt="getsitecontrol__compress-gif__free (2)" src="https://github.com/user-attachments/assets/16097de9-725a-4cdc-a22d-576895d77934" />
+
+
+(This is at 10x speed, expect the actual gameplay 10 times slower than this)
+
  ----------------------------------------------------------------------------------------------------------------------------------------------------------------- 
 
 🙏 Special Thanks & Acknowledgements
@@ -19,46 +27,17 @@ Based on these resources, i have also shared my handwritten notes as a standalon
 
 🗺️ What's in this Repository?
 
-I wanted to make sure the journey of building this was just as accessible as the final code. Here is what you'll find:
+I wanted the journey of building this processor to be just as accessible as the final code. Here is exactly what you'll find across the hardware, software, and simulation layers:
 
-1. The Hardware: Custom RV32IM CPU
-Designed and built a fully functional 32-bit RISC-V processor from scratch in SystemVerilog. The CPU implements the RV32IM instruction set architecture, meaning it supports the base integer instructions (RV32I) and the hardware multiplication/division extension (M).
-CPU Architecture Highlights:
+A single-cycle RV32IM CPU, written in SystemVerilog, with a dedicated hardware multiply/divide unit and a from-scratch byte-enable/load-extend pipeline for sub-word memory access.
 
-Single-Cycle Execution: The core is currently a single-cycle design, where each instruction is fetched, decoded, and executed in one clock cycle.
+A bare-metal C runtime (custom crt0.s, linker script, picolibc) with no OS underneath it.
 
-Memory Interface: Distinct instruction and data pathways (handled via a unified memory arbiter in the Verilator testbench).
+A port of doomgeneric, including a custom hardware abstraction layer and a fake filesystem that serves the WAD file straight out of a baked-in byte array.
 
-Hardware Multiplier Unit (multiplier.sv): A dedicated combination unit handling all signed, unsigned, and mixed signedness multiplication and division operations.
+A Verilator + SDL2 testbench acting as the "motherboard" — memory-mapped video, timer, keyboard, and UART.
 
-Branch Evaluator (be.sv): Dedicated combinational logic for evaluating all 6 conditional branch types.
-
-2. The Software: Bare-Metal C Runtime
-To run C code without an operating system, I had to build a complete bare-metal runtime environment using the GNU RISC-V toolchain (riscv64-unknown-elf-gcc).
-
-Bootloader (crt0.s): I wrote a custom assembly boot sequence that sets up the stack pointer (0x01000000), clears the .bss (uninitialized variables) memory segment to zero, and jumps into the C main() function.
-
-Linker Script (link.ld): I laid out the 16 MB of physical RAM, allocating space for the instruction .text, .data, and .bss sections, and feeding the remaining ~10 MB of RAM directly to the C Standard Library as the malloc heap.
-
-C Standard Library (picolibc): I linked against picolibc, a lightweight libc variant tailored for embedded devices, which gave us access to malloc, printf, and string.h functions natively.
-
-3. The Port: DOOM Generic
-I ported DOOM Generic, an abstraction of the original DOOM engine designed for easy porting to new hardware.
-
-Hardware Abstraction Layer (HAL): In doomgeneric_riscv.c, I wrote custom "Operating System" wrappers for DOOM.
-
-Fake File System: DOOM relies heavily on file I/O to read graphics and levels from the doom1.wad file. I bundled the 4 MB WAD file directly into our C binary as a byte array (doom1_wad.c) and intercepted C system calls (read, open, lseek, close) to read directly from this array instead of a real hard drive.
-
-4. The Simulator: Verilator & Memory-Mapped I/O (MMIO)
-Used Verilator to translate our SystemVerilog CPU into a highly optimized C++ model. The Verilator harness (main.cpp) acted as the "Motherboard" for our CPU.
-
-Video Output (0x02000000): We dedicated a region of memory as the "Video RAM." When the CPU writes DOOM's generated pixels to this address, the Verilator C++ testbench intercepts the write and paints the color onto an SDL2 graphical window.
-
-System Timer (0x02500000): DOOM requires a precise real-time clock to keep the game running at the correct speed. We exposed the host PC's wall-clock time to the CPU by letting the CPU read from this hardware address.
-
-Keyboard Input (0x02600000): We routed SDL2 keystrokes from the host PC directly into a memory address so the CPU could read player inputs. (these are very unstable but I ain't touching a thing as long as it's working fine lol)
-
-UART Console (0x10000000): We hooked printf to output characters to this address, which Verilator intercepted and printed to the terminal for debugging.
+The full, unfiltered debugging history of getting from "screen is black" to "DOOM boots." Three interesting stories below, including one that came down to a single wrong constant in the hardware.
 
  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -113,10 +92,71 @@ It is important to note that this CPU is currently entirely simulation-based. I 
 
 Porting DOOM to this architecture was a wildly buggy, trial-by-fire experience. Because there is no operating system involved—this is purely bare-metal execution running straight out of 16MB of initialized RAM—the game runs at a very low framerate (Lowkey Unplayable. But atleast it runs). If you are looking for a buttery-smooth, playable DOOM port, this isn't it. Instead, this serves as a raw proof of concept that a custom, hand-built 32-bit processor is fully capable of handling complex, real-world software workloads.
 
-Debugging the port also required some creative problem-solving. At one point, I hit a massive roadblock and couldn't tell if the issue was in my CPU logic, the C code, or the compiler. The screen was just black and it was hard to figure out where the bug was. To isolate the bug, I briefly spun up QEMU to emulate the architecture and test the compiled binaries. This confirmed the compiler instructions were sound, allowing me to confidently jump back into Verilator, pinpoint the actual hardware flaw, and finally get the game rendering. (This alone took me 5-6 Hours btw)
+Debugging the port also required some creative problem-solving. At one point, I hit a massive roadblock and couldn't tell if the issue was in my CPU logic, the C code, or the compiler. The screen was just black and it was hard to figure out where the bug was. Read the entire story below if you like:
+
+"It runs DOOM" is the easy sentence. Getting there took three separate, stacked failures across the software and hardware boundary — and the only way through was refusing to guess and instead designing an experiment that could actually tell hardware and software bugs apart.
+
+The method: QEMU as a lie detector
+
+Any crash in a from-scratch CPU leaves you with two suspects: the C code/compiler, or the physical logic gates. There's no way to tell which from a black screen alone.
+
+The fix was to boot the exact same compiled binary in QEMU — a battle-tested, industry-standard RISC-V emulator — alongside Verilator. The logic: if it crashes in QEMU too, the bug is in the software. If it only crashes on the custom CPU, the bug is in the hardware. This single technique is what cracked all three bugs below.
+
+**Bug #1 — The keyboard that was always pressed**
+
+Symptom: DOOM printed Doom Generic 0.1 in QEMU and froze instantly, never reaching the WAD loading stage.
+
+Investigation: printf tracing pinned the hang to an infinite loop inside DOOM's I_GetEvent() — the engine was endlessly draining a keyboard event queue that never emptied.
+
+Root cause: DG_GetKey() polls keyboard state from MMIO address 0x02600000, treating bit 16 as "a key is currently pressed." In Verilator, an idle keyboard reads back 0. But 0x02600000 isn't a real, mapped address in QEMU — reading an unmapped address there returns -1 (0xFFFFFFFF, all ones). Bit 16 of all-ones is 1. DOOM read that as a permanently-held key and tried to process effectively infinite phantom keystrokes per second.
+
+Fix: corrected the "no input" sentinel handling so an unmapped/idle read can't be misread as a held key.
 
 <img width="397" height="382" alt="image" src="https://github.com/user-attachments/assets/e1afc50d-3c93-407d-8f36-7cc994827cc3" />
 
+
+
+**Bug #2 — malloc eating its own program**
+
+Symptom: with the keyboard fixed, both QEMU and Verilator now crashed identically: Warning: recursive call to I_Error detected. Unable to allocate 5 MiB of RAM for zone.
+
+The fact that QEMU failed the exact same way as the real hardware was good news — it meant the CPU logic itself was innocent. This was a software/toolchain bug.
+
+Investigation: DOOM's Z_Init() requests ~6MB from malloc() in one shot. In a bare-metal environment, malloc() is backed by a small custom _sbrk() that hands out raw RAM starting from a __heap_start symbol defined by the linker script.
+
+Root cause: link.ld had a layout bug — it placed .sdata and .sbss (global variables and internal C-library state) after __heap_start instead of before it. When malloc() claimed its 6MB block, it wrote its own allocator metadata at the start of that region — directly on top of DOOM's global variables and picolibc's own internal state. The next printf call saw corrupted library state, panicked, and called I_Error(). I_Error() tried to print its own error message, hit the same corruption, and panicked again — the "recursive call to I_Error" loop.
+
+Fix: restructured link.ld (and link_qemu.ld) so every program section is strictly placed before __heap_start, guaranteeing malloc only ever hands out genuinely free RAM.
+
+**Bug #3 — The CPU that wasn't frozen, it was rebooting**
+
+Symptom: Verilator alone (QEMU now booted fine) just hung — no terminal output, no SDL window content, no visible signal of what the CPU was even doing.
+
+Investigation: added a one-line trace to the Verilator testbench, printing the Program Counter every 50,000 cycles:
+
+cppif (cycles % 50000 == 0) {
+    std::cout << "[DEBUG] Cycle " << cycles << " | PC: 0x" << std::hex << dut->pc_out << std::endl;
+}
+
+The output told the real story:
+
+[DEBUG] Cycle 1236600000 | PC: 0x1c
+[DEBUG] Cycle 1236700000 | PC: 0x20
+[DEBUG] Cycle 1236800000 | PC: 0x1c
+[DEBUG] Cycle 1236900000 | PC: 0x18
+[DEBUG] Cycle 1237000000 | PC: 0x20
+
+Over a billion cycles had run — but the PC was only ever bouncing between 0x18, 0x1C, and 0x20: the very first few instructions of crt0.s, right around the jump into main(). The CPU wasn't stuck. It was endlessly rebooting.
+
+Root cause: calling a function requires pushing a return address onto the stack, and the stack was positioned near the top of the 4.6MB DOOM binary's memory footprint — around the 4.5MB mark. But cpu.sv had this hardcoded into the MMIO decode:
+
+systemverilogassign mmio_we = mem_write & (alu_result >= 32'h00400000);
+
+Any address at or above 4MB was being treated as memory-mapped I/O, not RAM. The stack push at ~4.5MB landed in MMIO instead of RAM and vanished. When the function returned, the CPU read back 0x00000000 from nowhere, dutifully jumped there — and reset the entire program from the top. Forever.
+
+Fix: corrected the MMIO boundary to match the actual RAM size, so the stack stays inside real, addressable memory.
+
+A one-line std::cout in a testbench traced a high-level engine crash all the way down to a single off-by-orders-of-magnitude constant in the hardware description.
 
  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
