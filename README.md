@@ -14,6 +14,10 @@ The ultimate milestone of this project? Getting it to run DOOM. Whether you are 
 
 (This is at 10x speed, expect the actual gameplay 10 times slower than this)
 
+### Check out my Youtube video!
+
+https://youtu.be/V2cwD6cPNK8
+
  ----------------------------------------------------------------------------------------------------------------------------------------------------------------- 
 
 🙏 Special Thanks & Acknowledgements
